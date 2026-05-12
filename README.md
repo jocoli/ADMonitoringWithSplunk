@@ -5,6 +5,7 @@
 ## 1. Project Overview
 
 The purpose of this lab is to integrate a Splunk environment into my existing Active Directory home lab. 
+**Update:** Added new Part which includes creating an alert in Splunk for detecting potential brute force attacks. Also includes link to incident report. 
 
 <details>
 <summary> More about the AD Lab </summary>
@@ -257,8 +258,69 @@ Adding these to our dashboard and creating different visualizations for some of 
 
 <img src='images/SplunkFinalDashboard.png' title='Splunk Dashboard' alt='Splunk Dashboard'>
 
-## 5. Key Takeaways/What I learned
+## 5. Creating a Splunk Alert
 
-This project was enjoyable to do and very informative. I was able to learn how logs are sent from a number of machines to a SOC server and analyzing those logs with Splunk. I learned about new search queries in Splunk and event codes like 4625 and 4624, allowing me to monitor failed logins and successful logins of users from the Active Directory. I was able to create dashboards that became a great representation of logs connected to those event codes.
+I created an alert in Splunk to expand my lab to be more what it would be like in a SOC operation. Here is the alert:
 
-For this project I was most proud of being able to integrate Splunk to be used along with my Active Directory project and being able to monitor logs from that project. It leaves me excited for future projects like creating alerts on Splunk, implementing Identity and Access Management (IAM) for Active Directory, suspicious commands in PowerShell and reviewing those related logs on Splunks.
+<img src='images/addedAlert.png' title='Added Alert' alt='Added Alert'>
+
+I wanted to create an alert to build on top of my project, so I decided to base it around what I already have, a brute force simulation.
+This is the SPL query used to create the alert:
+
+```splunk
+index=main EventCode=4625 | bucket _time span=2m | stats count by _time, Account_Name, host | where count >= 5
+```
+
+This query searches for failed logon events in the span of two minutes if there were more than 5 events. 
+
+In the alert you can also view the settings and configurations. It runs on a Cron schedule every 5 minutes and its time range is 5 minutes. The alert is triggered when the query runs and at least one result is found. It is then added to triggered alerts. 
+
+<img src='images/triggeredAlert.png' title='Triggered Alert' alt='Triggered Alert'>
+
+We can also view the triggered alert which automatically inputs the search query and the time the incident occurred.
+
+<img src='images/viewAlertResult.png' title='View Alert' alt='View Alert'>
+
+In the image you can see we have two results, and we focus on the event time, account names involved, the specific host machines involved, and the number of logs associated with that event.
+
+## 6. Incident Report
+
+After creating an alert and confirming that it works, I then proceeded to create an incident report to best follow how SOC Analysts would act in a similar scenario.
+For now, I decided to take the role of a Level 1 SOC Analyst reporting to their manager or escalating to Level 2 SOC Analysts. The incident report starts with the alert that was triggered, which was on 3/28/26 around 9:18 PM. We would then investigate this alert by analyzing the logs associated with it. We want to look specifically for the "a-jlinang" account since it is the domain admin account and realistically holds the most risk if compromised.
+
+```splunk
+index=main EventCode=4625 Account_Name="a-jlinang" | bucket _time span=2m
+```
+<img src='images/QueryForLogExamination.png' title='Log Examination 1' alt='Log Examination 1'>
+
+That gives us logs that we can examine, since we are working with a scripted "brute force attack," most of/if not all of these logs are identical. The following images shows us important information associated with these logs such as: the account name (which is the domain admin account, but also the other account involved "jdoe"), the host machine involved (CLIENT2), and the reason for failure.
+
+<img src='images/LogExamination1.png' title='Log Examination 1' alt='Log Examination 1'>
+
+<img src='images/LogExamination2.png' title='Readable Log Examination First Half' alt='Readable Log Examination First Half'>
+
+<img src='images/LogExamination2_5.png' title='Readable Log Examination Second Half' alt='Readable Log Examination Second Half'>
+
+We can see that the "attacker" tried to log onto the domain admin account from the "jdoe" account who was on the CLIENT2 host machine at that time. However, the alert or the logs does not indicate that they were successful. Since we are specifically looking for a large number of failed logon activity that would indicate a potential brute force attack, we must also not forget to confirm that the attacker was or was not able to successfully log on.
+
+To this we know must look at the logs for successful logons regarding the domain admin account "a-jlinang."
+
+<img src='images/SuccessfulLogOnDomainAcc.png' title='Successful Logons on Domain Account' alt='Successful Logons on Domain Account'>
+
+Here we see that there were successful logons to the "a-jlinang" account, but we must may close attention to the time. These events were around 8:30 PM, but the alert was triggered around 9:18 PM. So these events may not be related to the incident and may be normal behavior. To be even more sure, we could expand our search query to specifically target logons to the domain admin account from the CLIENT2 machine that the attacker was on. This is because if the attacker was successful, then we would see that the logon to "a-jlinang" but on the CLIENT2 host instead of the normal DC host since the attacker does not have access to that machine.
+
+<img src='images/NoSuccessfulLogonFromCLIENT2.png' title='No Successful Logons on Domain Account' alt='No Successful Logons on Domain Account'>
+
+Putting in that factor we can see that there were no results found that included successful logons from the CLIENT2 host. This means that the attacker was not successful in logging onto the domain admin account. If the attacker was successful then the severity of this incident would be **High** since having access to the domain admin account could cause much more damage to the organization. With the domain admin account, the attacker can ensure that they have access to our system and potentially cause massive damage or steal confidential data. However, since the attacker was unsuccessful the severity of the incident is more suited to a **Medium**, this is because they while they may not cause the same damage, they can cause still cause trouble especially from an employee account "jdoe." If "jdoe" belonged to a department who are working on a specific project, the attacker may have access to that project as well.
+
+Possible remediations for this incident includes, temporarily disabling the "jdoe" account, quarantining the CLIENT2 machine, policies like account lock out after three failed attempts, and multi-factor authentication (MFA) would probably be the most important recommendations to give.
+
+That is the end of our incident report, if you would like to see more of it click on this link.
+
+[Link To Incident Report](LabIncidentReport.pdf)
+
+## 7. Key Takeaways/What I learned
+
+This project was enjoyable to do and very informative. I was able to learn how logs are sent from a number of machines to a SOC server and analyzing those logs with Splunk. I learned about new search queries in Splunk and event codes like 4625 and 4624, allowing me to monitor failed logins and successful logins of users from the Active Directory. I was able to create dashboards that became a great representation of logs connected to those event codes. I was then able to create an alert on Splunk, trigger it, investigate it, and write an incident report on it.
+
+For this project I was most proud of being able to integrate Splunk to be used along with my Active Directory project and being able to monitor logs from that project. It leaves me excited for future projects such as implementing Identity and Access Management (IAM) for Active Directory, suspicious commands in PowerShell and reviewing those related logs on Splunks.
